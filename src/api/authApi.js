@@ -35,3 +35,35 @@ export async function signMessage(walletAddress, nonce, action) {
         alert('Failed to sign');
     }
 }
+async function networkDelaySimulation() {
+    return new Promise(resolve => setTimeout(resolve, 1000));
+}
+
+async function authenticateLogin({ username, password }) {
+    if (username === "user" && password === "password") {
+        return { success: true, token: "fake-jwt-token" };
+    } else {
+        return { success: false, message: "Invalid username or password." };
+    }
+}
+
+async function authenticateSignup({ email }) {
+    if (email === "haveAcc@test.com") {
+        return { success: false, message: "User already exists." };
+    } else {
+        return { success: true, token: "fake-jwt-token" };
+    }
+}
+
+export async function authenticateUser(userType, credentials) {
+    await networkDelaySimulation();
+
+    switch (userType) {
+        case 'login':
+            return authenticateLogin(credentials);
+        case 'signup':
+            return authenticateSignup(credentials);
+        default:
+            return { success: false, message: "Unknown user type." };
+    }
+}
