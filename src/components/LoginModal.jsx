@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { useForm } from '@/utils/useForm';
-import { authenticateViaMetaMask, getNonce, getWalletAddress, signMessage } from '@/api/authApi';
+import { useForm } from '@/hooks/useForm';
+import {authenticateUser, authenticateViaMetaMask, getNonce, getWalletAddress, signMessage} from '@/api/authApi';
 import { Modal, Box, Tab, Tabs, TextField, Button, Typography, useMediaQuery, useTheme  } from '@mui/material';
 import {playClickSound} from '@/utils/sound'
 
-const networkDelaySimulation = () => new Promise(resolve => setTimeout(resolve, 1000));
 const isValidEmail = email => /\S+@\S+\.\S+/.test(email);
 const MIN_PASSWORD_LENGTH = 6;
 
@@ -41,12 +40,10 @@ function AuthModal({ open, onClose }) {
             setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
             return;
         }
-        if (activeTab === 'signup' && (!email || !username)) {
-            setError('Please fill in all fields for signup.');
-            return;
-        }
-        if (activeTab === 'login' && !username) {
-            setError('Please fill in all fields for login.');
+        const isSignupMissingFields = activeTab === 'signup' && (!email || !username);
+        const isLoginMissingFields = activeTab === 'login' && !username;
+        if (isSignupMissingFields || isLoginMissingFields) {
+            setError(`Please fill in all fields for ${activeTab}.`);
             return;
         }
 
@@ -64,49 +61,47 @@ function AuthModal({ open, onClose }) {
         }
     };
 
-    async function authenticateUser(userType, credentials) {
-        await networkDelaySimulation();
-        if (userType === 'login') {
-            return credentials.username === "user" && credentials.password === "password"
-                ? { success: true, token: "fake-jwt-token" }
-                : { success: false, message: "Invalid username or password." };
-        } else {
-            return credentials.email === "haveAcc@test.com"
-                ? { success: false, message: "User already exists." }
-                : { success: true, token: "fake-jwt-token" };
-        }
-    }
     const handleAuthWithMetaMask = async () => {
         playClickSound();
         setError('');
 
         try {
-            const walletAddress = await getWalletAddress();
-            if (!walletAddress) {
-                throw new Error('MetaMask is not connected.');
-            }
-
-            const nonce = await getNonce(walletAddress);
-            const message = `Please sign this message to ${activeTab.toUpperCase()} with nonce: ${nonce}`;
-            const signature = await signMessage(walletAddress, message);
-
-            if (!signature) {
-                throw new Error('User cancelled the signing process.');
-            }
-
-            let username = activeTab === 'signup' ? values.signup.username : '';
-            const response = await authenticateViaMetaMask(walletAddress, signature, username, activeTab);
-
-            if (response && response.success) {
-                console.log(`${activeTab} successful with MetaMask. Token: ${response.token}`);
-                onClose();
-            } else {
-                throw new Error(`${activeTab} failed. Please try again.`);
-            }
+            const walletAddress = await getWalletAddressOrThrow();
+            const signature = await signNonceMessage(walletAddress);
+            await authenticateAndClose(walletAddress, signature);
         } catch (err) {
             setError(err.message);
         }
     };
+
+    async function getWalletAddressOrThrow() {
+        const walletAddress = await getWalletAddress();
+        if (!walletAddress) {
+            throw new Error('MetaMask is not connected.');
+        }
+        return walletAddress;
+    }
+
+    async function signNonceMessage(walletAddress) {
+        const nonce = await getNonce(walletAddress);
+        const message = `Please sign this message to ${activeTab.toUpperCase()} with nonce: ${nonce}`;
+        const signature = await signMessage(walletAddress, message);
+        if (!signature) {
+            throw new Error('User cancelled the signing process.');
+        }
+        return signature;
+    }
+
+    async function authenticateAndClose(walletAddress, signature) {
+        const username = activeTab === 'signup' ? values.signup.username : '';
+        const response = await authenticateViaMetaMask(walletAddress, signature, username, activeTab);
+        if (response && response.success) {
+            console.log(`${activeTab} successful with MetaMask. Token: ${response.token}`);
+            onClose();
+        } else {
+            throw new Error(`${activeTab} failed. Please try again.`);
+        }
+    }
     return (
         <Modal open={open} onClose={onClose}>
             <Box sx={{
